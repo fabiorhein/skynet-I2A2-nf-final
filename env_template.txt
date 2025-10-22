@@ -1,0 +1,42 @@
+# SkyNET-I2A2 - Template de Configuração
+# Renomeie este arquivo para .env e configure os valores
+
+# =============================================================================
+# CONFIGURAÇÕES OBRIGATÓRIAS
+# =============================================================================
+
+# Supabase (Banco de Dados)
+SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_KEY=your-anon-key-here
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
+
+# JWT & Autenticação
+JWT_SECRET_KEY=your-super-secret-jwt-key-change-this-in-production
+
+# APIs Externas
+GOOGLE_API_KEY=your-google-gemini-api-key-here
+OPENAI_API_KEY=your-openai-api-key-here
+
+# =============================================================================
+# CONFIGURAÇÕES OPCIONAIS
+# =============================================================================
+
+# Email (SendGrid)
+SENDGRID_API_KEY=your-sendgrid-api-key-here
+FROM_EMAIL=noreply@skynet-i2a2.com
+FROM_NAME=SkyNET-I2A2
+
+# Redis (Cache)
+REDIS_URL=redis://localhost:6379
+REDIS_PASSWORD=
+
+# Ambiente
+ENVIRONMENT=development
+DEBUG=true
+LOG_LEVEL=DEBUG
+
+# Upload de Arquivos
+MAX_FILE_SIZE_MB=10
+ALLOWED_EXTENSIONS=pdf,xml,csv,xlsx,xls
+UPLOAD_PATH=uploads
+
