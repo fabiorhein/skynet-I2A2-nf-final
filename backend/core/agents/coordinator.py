@@ -231,7 +231,7 @@ Responda em JSON com as seguintes chaves:
     async def route_task(self, task_type: TaskType, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Roteia tarefa para agente especializado apropriado"""
         
-        # Por enquanto, simula roteamento (agentes ainda não implementados)
+        # Mapeamento de tarefas para agentes
         agent_mapping = {
             TaskType.DOCUMENT_ANALYSIS: AgentRole.EXTRACTION,
             TaskType.DATA_ANALYSIS: AgentRole.ANALYST,
@@ -243,8 +243,71 @@ Responda em JSON com as seguintes chaves:
         
         target_agent = agent_mapping.get(task_type, AgentRole.CONSULTANT)
         
-        # Simula execução do agente especializado
-        return await self._simulate_agent_execution(target_agent, task_type, task_data)
+        # Executa agente especializado real
+        return await self._execute_specialized_agent(target_agent, task_type, task_data)
+    
+    async def _execute_specialized_agent(self, agent: AgentRole, task_type: TaskType, task_data: Dict) -> Dict[str, Any]:
+        """Executa agente especializado real"""
+        try:
+            user_id = UUID(task_data.get("user_id", "00000000-0000-0000-0000-000000000000"))
+            
+            if agent == AgentRole.EXTRACTION:
+                from .extraction import create_extraction_agent
+                extraction_agent = create_extraction_agent()
+                
+                file_path = task_data.get("file_path", "")
+                file_type = task_data.get("file_type", "")
+                
+                return await extraction_agent.process_document(file_path, file_type, user_id)
+            
+            elif agent == AgentRole.ANALYST:
+                from .analyst import create_analyst_agent
+                analyst_agent = create_analyst_agent()
+                
+                data = task_data.get("data", {})
+                analysis_type = task_data.get("analysis_type", "eda")
+                
+                return await analyst_agent.analyze_data(data, user_id, analysis_type)
+            
+            elif agent == AgentRole.CLASSIFIER:
+                from .classifier import create_classifier_agent
+                classifier_agent = create_classifier_agent()
+                
+                document_data = task_data.get("document_data", {})
+                sector = task_data.get("sector", "comercio")
+                
+                return await classifier_agent.classify_and_validate(document_data, user_id, sector)
+            
+            elif agent == AgentRole.VISUALIZER:
+                from .visualizer import create_visualization_agent
+                visualization_agent = create_visualization_agent()
+                
+                data = task_data.get("data", {})
+                suggestions = task_data.get("suggestions", [])
+                
+                return await visualization_agent.create_visualizations(data, suggestions, user_id)
+            
+            elif agent == AgentRole.CONSULTANT:
+                from .consultant import create_consultant_agent
+                consultant_agent = create_consultant_agent()
+                
+                context = task_data.get("context", {})
+                consultation_type = task_data.get("consultation_type", "general")
+                
+                return await consultant_agent.provide_consultation(context, user_id, consultation_type)
+            
+            else:
+                # Fallback para simulação
+                return await self._simulate_agent_execution(agent, task_type, task_data)
+                
+        except Exception as e:
+            return {
+                "agent": agent.value,
+                "task_type": task_type.value,
+                "result": f"Erro na execução do agente: {str(e)}",
+                "timestamp": datetime.now().isoformat(),
+                "status": "error"
+            }
     
     async def _simulate_agent_execution(self, agent: AgentRole, task_type: TaskType, task_data: Dict) -> Dict[str, Any]:
         """Simula execução de agente especializado (até implementação real)"""
