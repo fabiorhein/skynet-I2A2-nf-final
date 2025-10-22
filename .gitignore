@@ -44,5 +44,6 @@ vscode/
 *.pot
 *.mo
 # Environment variables - NUNCA commitar!
+.env
 .env.local
 .env.*.local
