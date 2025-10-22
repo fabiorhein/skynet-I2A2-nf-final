@@ -43,3 +43,6 @@ vscode/
 *.spec
 *.pot
 *.mo
+# Environment variables - NUNCA commitar!
+.env.local
+.env.*.local
