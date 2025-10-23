@@ -7,6 +7,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from uuid import UUID
+import uuid
 import hashlib
 
 from supabase import create_client, Client
@@ -15,12 +16,44 @@ from ..config import settings
 
 class SupabaseManager:
     """Gerenciador de operações Supabase"""
-    
+
     def __init__(self):
+        # Cliente para operações de leitura (usa anon key)
         self.supabase: Client = create_client(
             settings.supabase_url,
             settings.supabase_key
         )
+
+        # Cliente para operações administrativas (usa service_role key)
+        self.supabase_admin: Client = None
+
+        # Inicializar cliente administrativo com verificações
+        self._init_admin_client()
+
+    def _init_admin_client(self):
+        """Inicializa cliente administrativo com verificações robustas"""
+        try:
+            service_role_key = settings.supabase_service_role_key
+            if not service_role_key:
+                print("WARNING: SUPABASE_SERVICE_ROLE_KEY não configurada!")
+                return
+
+            if service_role_key == "your_service_role_key_here":
+                print("WARNING: SUPABASE_SERVICE_ROLE_KEY ainda está com valor de exemplo!")
+                return
+
+            self.supabase_admin = create_client(
+                settings.supabase_url,
+                service_role_key
+            )
+
+            # Testar se a chave funciona
+            test_result = self.supabase_admin.table('fiscal_documents').select('count', count='exact').limit(1).execute()
+            print(f"Service role key test: OK (found {test_result.count if hasattr(test_result, 'count') else 'unknown'} records)")
+
+        except Exception as e:
+            print(f"ERROR: Falha ao inicializar cliente administrativo: {e}")
+            self.supabase_admin = None
     
     # ==================== OPERAÇÕES DE USUÁRIO ====================
     
@@ -117,7 +150,7 @@ class SupabaseManager:
     async def create_fiscal_document(self, doc_data: Dict[str, Any]) -> Dict[str, Any]:
         """Cria documento fiscal"""
         try:
-            result = self.supabase.table('fiscal_documents').insert(doc_data).execute()
+            result = self.supabase_admin.table('fiscal_documents').insert(doc_data).execute()
             return result.data[0] if result.data else None
         except Exception as e:
             raise Exception(f"Erro ao criar documento: {str(e)}")
@@ -151,10 +184,175 @@ class SupabaseManager:
         """Atualiza documento fiscal"""
         try:
             update_data['updated_at'] = datetime.utcnow().isoformat()
-            result = self.supabase.table('fiscal_documents').update(update_data).eq('id', str(doc_id)).execute()
+            result = self.supabase_admin.table('fiscal_documents').update(update_data).eq('id', str(doc_id)).execute()
             return result.data[0] if result.data else None
         except Exception as e:
             raise Exception(f"Erro ao atualizar documento: {str(e)}")
+    
+    async def get_documents_by_user(self, user_id: str, filters: Dict = None) -> List[Dict[str, Any]]:
+        """Busca documentos do usuário com filtros (compatível com DataManager)"""
+        try:
+            query = self.supabase.table('fiscal_documents').select('*').eq('user_id', user_id)
+
+            # Aplicar filtros se fornecidos
+            if filters:
+                if 'limit' in filters:
+                    query = query.limit(filters['limit'])
+
+                if 'doc_type' in filters:
+                    query = query.eq('document_type', filters['doc_type'])
+
+                if 'status' in filters:
+                    query = query.eq('status', filters['status'])
+
+                if 'date_from' in filters and 'date_to' in filters:
+                    query = query.gte('created_at', filters['date_from']).lte('created_at', filters['date_to'])
+
+                if 'min_value' in filters and 'max_value' in filters:
+                    query = query.gte('document_value', filters['min_value']).lte('document_value', filters['max_value'])
+
+            result = query.order('created_at', desc=True).execute()
+            return result.data or []
+
+        except Exception as e:
+            print(f"Erro ao buscar documentos: {e}")
+            return []
+
+    async def save_document(self, document_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Salva documento processado no banco de dados"""
+        try:
+            # Adicionar campos obrigatórios se não existirem
+            if 'id' not in document_data:
+                document_data['id'] = str(uuid.uuid4())
+
+            if 'created_at' not in document_data:
+                document_data['created_at'] = datetime.utcnow().isoformat()
+
+            if 'status' not in document_data:
+                document_data['status'] = 'processed'
+
+            if 'validation_status' not in document_data and 'status' in document_data:
+                status_map = {
+                    'processed': 'success',
+                    'validated': 'success',
+                    'pending': 'pending',
+                    'error': 'error'
+                }
+                document_data['validation_status'] = status_map.get(document_data['status'], document_data['status'])
+
+            print(f"Attempting to save document with ID: {document_data.get('id')}")
+
+            # Tentar usar cliente administrativo primeiro
+            if self.supabase_admin:
+                print("Using admin client (service_role key)")
+                result = self.supabase_admin.table('fiscal_documents').insert(document_data).execute()
+
+                if result.data:
+                    print(f"Document saved successfully with admin client: {result.data[0].get('id')}")
+                    return result.data[0]
+                else:
+                    print("Admin client returned no data, trying fallback...")
+
+            # Fallback: tentar com cliente regular
+            print("Using regular client (anon key) as fallback")
+            result = self.supabase.table('fiscal_documents').insert(document_data).execute()
+
+            if result.data:
+                print(f"Document saved successfully with regular client: {result.data[0].get('id')}")
+                return result.data[0]
+            else:
+                print("Regular client also returned no data")
+                return None
+
+        except Exception as e:
+            print(f"Erro ao salvar documento: {e}")
+            print(f"Error details: {type(e).__name__}")
+            return None
+
+    async def get_analytics_data(self, user_id: str, date_range: tuple = None) -> List[Dict[str, Any]]:
+        """Busca dados analíticos do usuário - Fallback para documentos fiscais"""
+        try:
+            # Primeiro tenta buscar da tabela analytics_data
+            try:
+                query = self.supabase.table('analytics_data').select('*').eq('user_id', user_id)
+
+                if date_range:
+                    query = query.gte('date', date_range[0].isoformat()).lte('date', date_range[1].isoformat())
+
+                result = query.order('date', desc=True).execute()
+                if result.data:
+                    return result.data
+            except Exception as e:
+                print(f"Tabela analytics_data não encontrada, usando fallback: {e}")
+
+            # Fallback: gerar dados analíticos a partir dos documentos fiscais
+            documents = await self.get_fiscal_documents(user_id, limit=100)
+
+            if not documents:
+                return []
+
+            # Converter para formato analítico
+            analytics_data = []
+            for doc in documents:
+                # Usar data do documento como data da análise
+                doc_date = doc.get('created_at', doc.get('document_date', datetime.utcnow().isoformat()))
+                if isinstance(doc_date, str) and 'T' in doc_date:
+                    doc_date = doc_date.split('T')[0]  # Extrair só a data
+
+                # Categorizar por tipo de documento
+                doc_type = doc.get('document_type', 'outros')
+                category_mapping = {
+                    'nfe': 'Serviços',
+                    'nfce': 'Varejo',
+                    'cte': 'Transporte',
+                    'outros': 'Outros'
+                }
+                category = category_mapping.get(doc_type, 'Outros')
+
+                # Adicionar dados analíticos
+                analytics_data.append({
+                    'date': doc_date,
+                    'category': category,
+                    'value': float(doc.get('document_value', 0)),
+                    'quantity': 1,
+                    'metadata': {
+                        'document_type': doc_type,
+                        'document_number': doc.get('document_number', ''),
+                        'status': doc.get('status', 'unknown')
+                    }
+                })
+
+            return analytics_data
+
+        except Exception as e:
+            print(f"Erro ao buscar dados analíticos: {e}")
+            return []
+
+    async def get_pending_documents(self, user_id: str) -> List[Dict[str, Any]]:
+        """Busca documentos pendentes"""
+        try:
+            result = self.supabase.table('fiscal_documents')\
+                .select('*')\
+                .eq('user_id', user_id)\
+                .eq('status', 'pending')\
+                .order('created_at', desc=True)\
+                .execute()
+            return result.data or []
+        except Exception:
+            return []
+
+    async def get_inconsistent_documents(self, user_id: str) -> List[Dict[str, Any]]:
+        """Busca documentos com inconsistências"""
+        try:
+            result = self.supabase.table('fiscal_documents')\
+                .select('*')\
+                .eq('user_id', user_id)\
+                .eq('status', 'error')\
+                .order('created_at', desc=True)\
+                .execute()
+            return result.data or []
+        except Exception:
+            return []
     
     # ==================== OPERAÇÕES DE ANÁLISES ====================
     

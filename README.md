@@ -30,6 +30,7 @@ O **SkyNET-I2A2** é um sistema avançado de inteligência artificial que combin
 - **📧 Notificações**: Sistema assíncrono de emails com templates
 - **🎨 Visualizações**: Gráficos interativos com Plotly
 - **☁️ Cloud-Ready**: Deploy fácil em Streamlit Cloud, Railway, Render
+- **🔄 Dados Reais**: Sistema dinâmico baseado em documentos processados
 
 ---
 
@@ -75,6 +76,64 @@ graph TD
     K --> M
     L --> M
 ```
+
+---
+
+## 🔄 Sistema de Dados Reais
+
+O **SkyNET-I2A2** foi atualizado para trabalhar com **dados reais** ao invés de dados mock/hardcoded:
+
+### ✅ **Funcionalidades Implementadas**
+
+- **📊 Dashboard Dinâmico**: Métricas calculadas em tempo real baseadas em documentos processados
+- **📈 Análise Inteligente**: Filtros funcionais com dados reais do banco de dados
+- **📄 Processamento de Documentos**: Upload e extração automática de dados fiscais
+- **🔍 Busca Avançada**: Filtros por tipo, data, status e valor dos documentos
+- **📋 Visualizações Interativas**: Gráficos gerados dinamicamente com dados do usuário
+
+### 🗄️ **Integração com Supabase**
+
+O sistema agora se conecta ao Supabase para:
+- **Armazenamento de documentos** processados
+- **Persistência de análises** realizadas
+- **Cache de respostas** de IA
+- **Logs de auditoria** completos
+
+### 📤 **Upload de Documentos**
+
+**Formatos Suportados:**
+- **XML**: NFe, NFCe, CTe (parsing automático)
+- **PDF**: Extração via OCR
+- **Imagens**: PNG, JPG, JPEG (OCR com Tesseract)
+
+**Processamento Automático:**
+1. Upload do arquivo
+2. Extração de dados estruturados
+3. Validação fiscal automática
+4. Armazenamento no banco de dados
+5. Geração de métricas e insights
+
+### 📊 **Métricas Dinâmicas**
+
+**Dashboard em Tempo Real:**
+- Total de documentos processados
+- Valor total dos documentos
+- Documentos por categoria
+- Alertas automáticos
+- Gráficos interativos
+
+**Análise Avançada:**
+- Estatísticas descritivas
+- Análise de tendências
+- Correlação entre variáveis
+- Insights automáticos
+
+### 🔧 **Configuração para Dados Reais**
+
+1. **Configure as tabelas** no Supabase (veja `DADOS_REAIS_SETUP.md`)
+2. **Adicione suas API keys** no arquivo `.env`
+3. **Upload documentos** através da interface
+4. **Visualize métricas** em tempo real
 
 ---
 
@@ -353,45 +412,65 @@ docker-compose up -d
 
 ### Exemplos de Uso
 
-#### 1. Processamento de NFe
+#### 1. Processamento de NFe com Dados Reais
 
 ```python
 # Upload de documento fiscal
-uploaded_file = st.file_uploader("Upload NFe", type=['xml', 'pdf'])
+uploaded_file = st.file_uploader("Upload NFe/NFCe/CTe", type=['xml', 'pdf', 'png', 'jpg'])
 
 if uploaded_file:
-    # Processa via ExtractionAgent + ClassifierAgent
-    result = coordinator.process_request(
-        "Analise este documento fiscal",
-        context={"file": uploaded_file, "type": "NFe"}
-    )
+    # Processa via DataManager
+    result = asyncio.run(data_manager.process_uploaded_document(
+        uploaded_file,
+        uploaded_file.name.split('.')[-1],
+        user_id
+    ))
     
-    st.json(result['response'])
+    if result["success"]:
+        st.success("✅ Documento processado com sucesso!")
+        st.rerun()  # Atualiza dashboard com novos dados
+    else:
+        st.error(f"❌ Erro: {result['error']}")
 ```
 
-#### 2. Análise Exploratória
+#### 2. Dashboard Dinâmico com Dados Reais
 
 ```python
-# Upload de CSV
-df = pd.read_csv(uploaded_file)
+# Dashboard busca dados automaticamente
+user_id = st.session_state.user_data.get('id')
+dashboard_data = asyncio.run(data_manager.get_dashboard_data(user_id))
 
-# Análise via AnalystAgent + VisualizationAgent
-result = coordinator.process_request(
-    "Faça uma análise exploratória destes dados de vendas",
-    context={"dataframe": df.to_dict(), "type": "sales"}
-)
-
-# Exibe insights e gráficos
-st.markdown(result['response'])
+# Métricas calculadas dinamicamente
+metrics = dashboard_data.get('metrics', {})
+st.metric("📄 Documentos Processados", f"{metrics.get('total_documents', 0):,}")
+st.metric("💰 Valor Total", f"R$ {metrics.get('total_value', 0):,.2f}")
 ```
 
-#### 3. Chat Contextualizado
+#### 3. Análise com Filtros Reais
 
 ```python
-# Chat com contexto de análise anterior
+# Buscar dados analíticos do usuário
+analytics_data = asyncio.run(data_manager.get_real_analytics_data(user_id))
+
+# Aplicar filtros
+if not analytics_data.empty:
+    # Filtros por data e categoria
+    filtered_data = analytics_data[
+        (analytics_data['Data'] >= date_range[0]) &
+        (analytics_data['Categoria'].isin(selected_categories))
+    ]
+    
+    # Geração automática de insights
+    st.area_chart(filtered_data, x='Data', y='Valor')
+```
+
+#### 4. Chat Contextualizado com Histórico Real
+
+```python
+# Chat com contexto de documentos processados
 result = coordinator.process_request(
-    "Quais são as principais recomendações para aumentar vendas?",
-    context={"analysis_id": "uuid-da-analise-anterior"}
+    "Analise meus documentos fiscais do último mês",
+    context={"user_id": user_id, "data_type": "fiscal"}
 )
 
 st.chat_message("assistant").write(result['response'])
@@ -506,7 +585,7 @@ projeto_skynet_final/
 │   │   ├── agents/                 # Agentes especializados
 │   │   ├── llm.py                  # Integração LLM
 │   │   ├── memory.py               # Supabase integration
-│   │   ├── analysis.py             # Funções EDA
+│   │   ├── data_manager.py         # Sistema de dados reais
 │   │   ├── visualization.py        # Plotly helpers
 │   │   ├── ocr_processor.py        # OCR + LayoutLM
 │   │   ├── xml_parser.py           # Parser NFe/CTe
